@@ -30,9 +30,7 @@ import { ethers, utils } from "ethers";
 import { useERC20Balances, useMoralis, useNFTBalances } from "react-moralis";
 import axios from "axios";
 import { useThemeSwitcher } from "react-css-theme-switcher";
-import { useLookupAddress, useResolveEnsName } from "eth-hooks/dapps/ens";
 import { useVerifyMetadata } from "../../hooks/useVerifyMetadata";
-import { useLocalStorage } from "../../hooks";
 const { Text } = Typography;
 export const CartContext = createContext([]);
 export const AddCartContext = createContext(item => {});
@@ -96,22 +94,15 @@ function ShoppingCart({
   targetNetwork,
   tx,
   writeContracts,
-  readContracts,
   gun,
 }) {
   const { data: assets } = useERC20Balances();
-  const ipfsAPI = require("ipfs-http-client");
-  const ipfs = ipfsAPI({ host: "ipfs.infura.io", port: "5001", protocol: "https" });
   const [visible, setVisible] = useState(false);
   const [visible1, setVisibility1] = useState(false);
   const [visible2, setVisibility2] = useState(false);
   const [items, setItems] = useState([]);
-  const { BufferList } = require("bl");
-  // check if user has gone through approval process, used to show two step buttons, reset on token change
   /* 🔥 This hook will get the price of Gas from ⛽️ EtherGasStation */
   const gasPrice = useGasPrice(targetNetwork, "average");
-  // Get a list of tokens from a tokenlist -> see tokenlists.org!
-  // const [selectedToken, setSelectedToken] = useState("Pick a token!");
   const { data: NFTBalances } = useNFTBalances();
   const [toTradeItems, setToTradeItems] = useState([]);
   const [isMobile, setIsMobile] = useState("300px");
@@ -295,7 +286,6 @@ function ShoppingCart({
     }
     setItems(theItems);
     setVisible(true);
-    console.log(theItems);
   };
 
   const onOpen = async () => {
@@ -382,15 +372,13 @@ function ShoppingCart({
         }
         const options = {
           type: nft?.is1155,
-          tokenId: nft?.token_id,
-          contractAddress: nft?.token_address,
-          price: nft?.price,
           amount: nft?.amount,
         };
-
+        let string = nft.price.toString();
+        let bigPrice = utils.parseEther(string);
         nftContracts.push(options.contractAddress);
         tokenIds.push(options.tokenId);
-        prices.push(Web3.BigNumber(options.price * 1e18).toNumber());
+        prices.push(bigPrice);
         amount1155s.push(options.amount);
 
         // Create new DB instance
@@ -639,7 +627,7 @@ function ShoppingCart({
             collectionName: nft.collectionName,
             isSpecific: nft.isSpecific,
             wantedId: nft.wantedIds,
-            tokenId: nft.tokenIds,
+            tokenId: nft.tokenId,
             createdAt: Date.now(),
           });
         gunTrade.get("nfts").get(nft.collectionName).get("blindTrades").set(newTrade);
@@ -815,7 +803,6 @@ function ShoppingCart({
       update => {
         console.log("📡 Transaction Update:", update);
         if (update && (update.status === "confirmed" || update.status === 1)) {
-          // message.info(" 🍾 Transaction " + update.hash + " finished!");
           message.info(
             " 🍾 Transaction " +
               update.hash +
@@ -1021,13 +1008,6 @@ function ShoppingCart({
     });
   };
 
-  const [approving, setApproving] = useState();
-  const handleApprove = async (amnt, tokenContract) => {
-    let contract = new Web3.eth.Contract(ERC20ABI, tokenContract);
-    let amount = new Web3.BigNumber(amnt * 1e18).toNumber();
-    await contract.approve(address, amount);
-  };
-
   const makeCall = async (callName, contract, args, metadata = {}) => {
     if (contract[callName]) {
       let result;
@@ -1045,12 +1025,10 @@ function ShoppingCart({
   const [offers, setOffers] = useState();
 
   const updateRouterAllowance = async (newAllowance, tokenContract) => {
-    setApproving(true);
     try {
       const tempContract = new ethers.Contract(tokenContract, erc20Abi, userSigner);
       const result = await makeCall("approve", tempContract, [writeContracts.MarketOffers.address, newAllowance]);
       notification.open(result);
-      setApproving(false);
       return true;
     } catch (e) {
       notification.open({
@@ -1070,7 +1048,7 @@ function ShoppingCart({
       }
     });
     const approvalAmount = ethers.utils.hexlify(ethers.utils.parseUnits(amnt.toString(), decimals));
-    // message.info(approvalAmount);
+    message.info(approvalAmount);
     const approval = updateRouterAllowance(approvalAmount, tokenContract);
     if (approval) {
       item.offerApproved = true;
@@ -1178,16 +1156,6 @@ function ShoppingCart({
     setVisibility1(true);
   };
 
-  const setItemToTrade = nft => {
-    let toTrades = [];
-    let tradeItems = window.localStorage.getItem("tradeItems");
-    let theItems = JSON.parse(tradeItems);
-    theItems.map(thisItem => {
-      toTrades.push(thisItem);
-    });
-    setToTradeItems(toTrades);
-  };
-
   useEffect(() => {
     const loadList = async () => {
       // https://tokens.coingecko.com/uniswap/all.json
@@ -1217,14 +1185,7 @@ function ShoppingCart({
     if (isAuthenticated && !isWeb3Enabled && !isWeb3EnableLoading) enableWeb3({ provider: connectorId });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, isWeb3Enabled]);
-  const { Moralis, chainId } = useMoralis();
-  const [receiverToSend, setReceiver] = useState(null);
   const { verifyMetadata } = useVerifyMetadata();
-  const addressFromENS = useResolveEnsName(mainnetProvider, receiverToSend ? receiverToSend : "phunkyjon.eth");
-
-  const isENS = (address = "") => address.endsWith(".eth") || address.endsWith(".xyz");
-  const currentValue = typeof receiverToSend !== "undefined" ? receiverToSend : "phunkyjon.eth";
-  const ens = useLookupAddress(mainnetProvider, currentValue);
 
   const setItemToStorage = (nft, item) => {
     item.trade_token_id = nft.token_id;
@@ -1258,16 +1219,7 @@ function ShoppingCart({
         onClose={onClose}
         visible={visible}
         bodyStyle={{ paddingBottom: 80 }}
-        extra={
-          <Space>
-            <Button key="shopping-cart-top-space-cancel-button" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button key="shopping-cart-top-space-submit-button" onClick={onClose} type="primary">
-              Submit
-            </Button>
-          </Space>
-        }
+        footer={false}
       >
         <div>
           <GasGauge key="shopping-cart-top-space-gas" gasPrice={gasPrice} />
@@ -1389,8 +1341,8 @@ function ShoppingCart({
                       }
                       key={marketItem.nftCont}
                     >
-                      <p>Id: {marketItem.token_id}</p>
-                      {marketItem.contract_type === ["ERC1155"] && <div>{marketItem.amount1155} ERC1155 NFTs</div>}
+                      <h6>Id: {marketItem.token_id}</h6>
+                      {marketItem.contract_type === ["ERC1155"] && <h7>{marketItem.amount1155} ERC1155 NFTs</h7>}
                     </Card>
                   </div>
                 );
@@ -1510,9 +1462,9 @@ function ShoppingCart({
                     }
                     key={marketItem.nftCont}
                   >
-                    <p>Id: {marketItem.token_id}</p>
+                    <h6>Id: {marketItem.token_id}</h6>
                     <br />
-                    <h2>Bid Value: {marketItem.bidValue}</h2>
+                    <h6>Bid Value: {marketItem.bidValue}</h6>
                     <br />
                     {marketItem.contract_type === ["ERC1155"] && <div>{marketItem.amount1155} ERC1155 NFTs</div>}
                   </Card>
@@ -1639,9 +1591,9 @@ function ShoppingCart({
                   >
                     <p>Id: {marketItem.token_id}</p>
                     <br />
-                    <h2>Bid Value: {marketItem.bidValue}</h2>
+                    <h6>Bid Value: {marketItem.bidValue}</h6>
                     <br />
-                    <h3>{marketItem.amount1155 ? <h3>For {marketItem.amount1155} ERC1155 NFT's.</h3> : <></>}</h3>
+                    <h6>{marketItem.amount1155 ? <h7>For {marketItem.amount1155} ERC1155 NFT's.</h7> : <></>}</h6>
                   </Card>
                 </div>;
               })}
@@ -1649,7 +1601,7 @@ function ShoppingCart({
                 (The term "blind" is used in reference to an unlisted item on this market. If a specific NFT is not
                 chosen, any holder of the collection can claim the bid.)
               </p>
-              <Button style={{ margin: 5 }} onClick={bid}>
+              <Button style={{ margin: 5 }} onClick={blindBid}>
                 Bid
               </Button>
             </div>
@@ -1701,7 +1653,6 @@ function ShoppingCart({
                     >
                       {assets &&
                         assets.map(asset => {
-                          console.log(assets);
                           return (
                             <Option
                               key={asset.token_address}
@@ -1828,18 +1779,17 @@ function ShoppingCart({
                     }
                     key={marketItem.nftCont}
                   >
-                    <p>Id: {marketItem.token_id}</p>
+                    <p>Id: {marketItem.tokenId}</p>
                     <br />
-                    <h2>Offer Value: {marketItem.bidValue}</h2>
+                    <h5>Offer Value: {marketItem.amount}</h5>
                     <br />
-                    <h3>{marketItem.amount1155 ? <h3>For {marketItem.amount1155} ERC1155.</h3> : <></>}</h3>
-                    <h3>
-                      For {marketItem.offerValue} of {marketItem.name} found at (Contract: {marketItem.offerContract}).
-                    </h3>
+                    <p>
+                      For {marketItem.amount} of (Contract: {marketItem.offerContract}).
+                    </p>
                   </Card>
                 </div>;
               })}
-              <Button style={{ margin: 5 }} onClick={bid}>
+              <Button style={{ margin: 5 }} onClick={offer}>
                 Offer
               </Button>
             </div>
@@ -2019,7 +1969,13 @@ function ShoppingCart({
                     }
                     key={marketItem.nftCont}
                   >
-                    <p>Id: {marketItem.token_id}</p>
+                    <p>Id: {marketItem.tokenId}</p>
+                    <br />
+                    <h5>Offer Value: {marketItem.amount}</h5>
+                    <br />
+                    <p>
+                      For {marketItem.amount} of (Contract: {marketItem.offerContract}).
+                    </p>
                     {marketItem.contract_type === ["ERC1155"] && <div>{marketItem.amount1155} ERC1155 NFTs</div>}
                   </Card>
                 </div>;
@@ -2288,7 +2244,7 @@ function ShoppingCart({
           <></>
         )}
         {blindTradeReady && (
-          <Modal title={"Order confirmation.."} visible={visible2} onCancel={() => setTradeReady(false)}>
+          <Modal title={"Order confirmation.."} visible={visible2} onCancel={() => setBlindTradeReady(false)}>
             <div>
               <h1>Confirm Transaction</h1>
               <p>You are about to enter a "blind" Trade for the following items:</p>
@@ -2317,7 +2273,7 @@ function ShoppingCart({
                 (The term "blind" is used in reference to an unlisted item on this market. If a specific NFT is not
                 chosen, any holder of the collection can claim the trade.)
               </p>
-              <Button style={{ margin: 5 }} onClick={trade}>
+              <Button style={{ margin: 5 }} onClick={blindTrade}>
                 Trade
               </Button>
             </div>
@@ -2391,7 +2347,7 @@ function ShoppingCart({
             {address && address !== undefined ? (
               <>
                 {items.toList && items.toList.length > 0 ? (
-                  <Button key={"shopping-cart-to-list-list-button"} onClick={list} type="primary">
+                  <Button key={"shopping-cart-to-list-list-button"} onClick={() => setListReady(true)} type="primary">
                     List!
                   </Button>
                 ) : (
